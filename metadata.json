@@ -1,0 +1,5 @@
+{
+  "name": "PDF Intelligence",
+  "description": "Upload, analyze, question, and organize PDF documents with AI-powered insights, study notes, mind maps, and structured data extraction.",
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
