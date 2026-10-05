@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/services/api';
 import type { DocumentExtractedData, ExtractedDataSet, PdfDocument } from '@/types';
+import AiResponseRenderer from '@/components/AiResponseRenderer';
 
 export default function ExtractedDataPage() {
   const [searchParams] = useSearchParams();
@@ -229,7 +230,7 @@ export default function ExtractedDataPage() {
                       key={idx}
                       className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-800 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-200"
                     >
-                      {fact}
+                      <AiResponseRenderer content={fact} allowCopy={false} />
                     </div>
                   ))}
                   {(!extractedData.key_facts || extractedData.key_facts.length === 0) && (

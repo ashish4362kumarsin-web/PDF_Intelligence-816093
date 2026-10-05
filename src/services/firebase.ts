@@ -7,11 +7,14 @@ import {
   sendEmailVerification,
   sendPasswordResetEmail,
   setPersistence,
+  signInAnonymously,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   updateProfile
 } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 function cleanEnv(val?: string | null): string {
   if (!val || typeof val !== 'string') return '';
@@ -54,6 +57,8 @@ export const firebaseApp = firebaseConfigured
   : null;
 
 export const firebaseAuth = firebaseApp ? getAuth(firebaseApp) : null;
+export const db = firebaseApp ? getFirestore(firebaseApp) : null;
+export const storage = firebaseApp ? getStorage(firebaseApp) : null;
 
 // Ensure persistent session across browser sessions/reloads
 if (firebaseAuth) {
@@ -68,6 +73,10 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 export const firebaseAuthActions = {
   signIn: signInWithEmailAndPassword,
   signUp: createUserWithEmailAndPassword,
+  signInAnonymously: () => {
+    if (!firebaseAuth) throw new Error('Firebase authentication is not configured.');
+    return signInAnonymously(firebaseAuth);
+  },
   signInWithGoogle: () => {
     if (!firebaseAuth) throw new Error('Firebase authentication is not configured.');
     return signInWithPopup(firebaseAuth, googleProvider);

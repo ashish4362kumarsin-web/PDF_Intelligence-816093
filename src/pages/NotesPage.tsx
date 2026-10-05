@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   AlertCircle,
   Check,
@@ -14,6 +12,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/services/api';
 import type { NoteItem, PdfDocument } from '@/types';
+import AiResponseRenderer from '@/components/AiResponseRenderer';
 
 export default function NotesPage() {
   const [searchParams] = useSearchParams();
@@ -246,10 +245,8 @@ export default function NotesPage() {
                 </div>
               </div>
 
-              <div className="prose prose-slate dark:prose-invert max-w-none pt-6 text-sm">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {activeNote.body}
-                </ReactMarkdown>
+              <div className="pt-6 text-sm">
+                <AiResponseRenderer content={activeNote.body} allowCopy={false} />
               </div>
             </div>
           ) : (

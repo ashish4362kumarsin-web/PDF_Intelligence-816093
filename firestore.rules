@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Deny all by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Strict multi-tenant user isolation
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /documents/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /conversations/{conversationId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+
+        match /messages/{messageId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+      }
+
+      match /studyNotes/{noteId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /mindMaps/{mapId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /extractedData/{dataId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /intelligence/{intelId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /quizHistory/{quizId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+  }
+}

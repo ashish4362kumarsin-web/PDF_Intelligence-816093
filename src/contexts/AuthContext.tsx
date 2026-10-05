@@ -12,133 +12,128 @@ interface AuthContextValue {
   loading: boolean;
   isConfigured: boolean;
   isAuthenticated: boolean;
-  isDemoAllowed: boolean;
+  isGuest: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signUp: (email: string, password: string, displayName: string) => Promise<void>;
+  continueAsGuest: () => Promise<void>;
+  exitGuestMode: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   sendVerificationEmail: () => Promise<void>;
   reloadUser: () => Promise<void>;
+  updateUserProfile: (data: { displayName?: string; photoURL?: string }) => Promise<void>;
   signOut: () => Promise<void>;
-  enterDemoMode: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+const GUEST_STORAGE_KEY = 'pdf_intel_guest_session';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Demo allowed only in development/preview when Firebase is not configured, or explicitly enabled
-  const isDemoAllowed = Boolean(
-    !firebaseConfigured &&
-      (import.meta.env.VITE_ALLOW_DEMO_AUTH === 'true' || import.meta.env.DEV)
-  );
-
   useEffect(() => {
-    if (!firebaseAuth) {
-      // Check if previously stored demo user session exists
-      if (isDemoAllowed) {
-        const savedDemo = localStorage.getItem('pdf_intelligence_demo_user');
-        if (savedDemo) {
-          try {
-            setUser(JSON.parse(savedDemo));
-          } catch {
-            setUser(null);
+    // Check if there was an active guest session in sessionStorage
+    const checkGuestFallback = () => {
+      try {
+        const stored = sessionStorage.getItem(GUEST_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.isGuest) {
+            setUser(parsed);
+            setLoading(false);
+            return true;
           }
         }
-      } else {
-        localStorage.removeItem('pdf_intelligence_demo_user');
+      } catch {
+        // ignore
+      }
+      return false;
+    };
+
+    // If Firebase Auth is not initialized due to missing configuration
+    if (!firebaseAuth) {
+      if (!checkGuestFallback()) {
         setUser(null);
       }
       setLoading(false);
       return;
     }
 
-    // Subscribe to real Firebase authentication state
+    // Subscribe to real Firebase authentication state as single source of truth
     const unsubscribe = firebaseAuth.onAuthStateChanged((firebaseUser) => {
       if (firebaseUser) {
+        // If it's a real Firebase Anonymous user
+        const isAnon = Boolean(firebaseUser.isAnonymous);
         setUser({
           id: firebaseUser.uid,
-          email: firebaseUser.email ?? '',
-          displayName: firebaseUser.displayName ?? undefined,
+          uid: firebaseUser.uid,
+          email: firebaseUser.email ?? (isAnon ? 'guest@pdfintelligence.local' : ''),
+          displayName: firebaseUser.displayName ?? (isAnon ? 'Guest User' : undefined),
           photoURL: firebaseUser.photoURL ?? undefined,
-          emailVerified: firebaseUser.emailVerified
+          emailVerified: Boolean(firebaseUser.emailVerified),
+          creationTime: firebaseUser.metadata?.creationTime,
+          lastSignInTime: firebaseUser.metadata?.lastSignInTime,
+          phoneNumber: firebaseUser.phoneNumber ?? undefined,
+          isGuest: isAnon,
+          isAnonymous: isAnon
         });
+        sessionStorage.removeItem(GUEST_STORAGE_KEY);
       } else {
-        setUser(null);
+        // Check if there is an explicit guest fallback session active
+        if (!checkGuestFallback()) {
+          setUser(null);
+        }
       }
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [isDemoAllowed]);
+  }, []);
+
+  const isGuest = Boolean(user?.isGuest || user?.isAnonymous);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
       loading,
       isConfigured: firebaseConfigured,
-      isAuthenticated: Boolean(user),
-      isDemoAllowed,
+      isAuthenticated: Boolean(user && !user.isGuest),
+      isGuest,
       signIn: async (email, password) => {
+        sessionStorage.removeItem(GUEST_STORAGE_KEY);
         if (!firebaseAuth) {
-          if (!isDemoAllowed) {
-            throw new Error('Firebase authentication is not configured in this environment.');
-          }
-          const demoUser: User = {
-            id: 'demo-user',
-            email: email || 'demo@pdfintelligence.local',
-            displayName: email ? email.split('@')[0] : 'Demo User',
-            emailVerified: true
-          };
-          localStorage.setItem('pdf_intelligence_demo_user', JSON.stringify(demoUser));
-          setUser(demoUser);
-          return;
+          throw new Error('Firebase Authentication is not configured. Please check project settings.');
         }
         await firebaseAuthActions.signIn(firebaseAuth, email, password);
       },
       signInWithGoogle: async () => {
+        sessionStorage.removeItem(GUEST_STORAGE_KEY);
         if (!firebaseAuth) {
-          if (!isDemoAllowed) {
-            throw new Error('Google Sign-In requires Firebase to be configured.');
-          }
-          const demoGoogleUser: User = {
-            id: 'demo-google-user',
-            email: 'google.demo@pdfintelligence.local',
-            displayName: 'Google Demo User',
-            photoURL: undefined,
-            emailVerified: true
-          };
-          localStorage.setItem('pdf_intelligence_demo_user', JSON.stringify(demoGoogleUser));
-          setUser(demoGoogleUser);
-          return;
+          throw new Error('Google Sign-In requires Firebase Authentication to be configured.');
         }
         const credential = await firebaseAuthActions.signInWithGoogle();
         if (credential.user) {
           setUser({
             id: credential.user.uid,
+            uid: credential.user.uid,
             email: credential.user.email ?? '',
             displayName: credential.user.displayName ?? undefined,
             photoURL: credential.user.photoURL ?? undefined,
-            emailVerified: credential.user.emailVerified
+            emailVerified: Boolean(credential.user.emailVerified),
+            creationTime: credential.user.metadata?.creationTime,
+            lastSignInTime: credential.user.metadata?.lastSignInTime,
+            phoneNumber: credential.user.phoneNumber ?? undefined,
+            isGuest: false,
+            isAnonymous: false
           });
         }
       },
       signUp: async (email, password, displayName) => {
+        sessionStorage.removeItem(GUEST_STORAGE_KEY);
         if (!firebaseAuth) {
-          if (!isDemoAllowed) {
-            throw new Error('Firebase authentication is not configured in this environment.');
-          }
-          const demoUser: User = {
-            id: 'demo-user',
-            email: email || 'demo@pdfintelligence.local',
-            displayName: displayName || (email ? email.split('@')[0] : 'Demo User'),
-            emailVerified: false
-          };
-          localStorage.setItem('pdf_intelligence_demo_user', JSON.stringify(demoUser));
-          setUser(demoUser);
-          return;
+          throw new Error('Firebase Authentication is not configured. Please check project settings.');
         }
         const credential = await firebaseAuthActions.signUp(firebaseAuth, email, password);
         if (displayName) {
@@ -149,27 +144,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         setUser({
           id: credential.user.uid,
+          uid: credential.user.uid,
           email: credential.user.email ?? '',
           displayName: displayName || credential.user.displayName || undefined,
           photoURL: credential.user.photoURL ?? undefined,
-          emailVerified: credential.user.emailVerified
+          emailVerified: Boolean(credential.user.emailVerified),
+          creationTime: credential.user.metadata?.creationTime,
+          lastSignInTime: credential.user.metadata?.lastSignInTime,
+          phoneNumber: credential.user.phoneNumber ?? undefined,
+          isGuest: false,
+          isAnonymous: false
         });
+      },
+      continueAsGuest: async () => {
+        // Try Firebase Anonymous Authentication first if available
+        if (firebaseAuth) {
+          try {
+            await firebaseAuthActions.signInAnonymously();
+            return;
+          } catch (anonErr) {
+            console.warn(
+              '[Auth] Firebase Anonymous Authentication was not enabled or permitted, falling back to secure isolated guest session:',
+              (anonErr as Error).message
+            );
+          }
+        }
+
+        // Secure isolated client-side guest session
+        const guestId = 'guest_' + Math.random().toString(36).substring(2, 11);
+        const guestUser: User = {
+          id: guestId,
+          uid: guestId,
+          email: 'guest@pdfintelligence.local',
+          displayName: 'Guest User',
+          isGuest: true,
+          isAnonymous: true,
+          emailVerified: false,
+          creationTime: new Date().toISOString()
+        };
+        try {
+          sessionStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(guestUser));
+        } catch {
+          // ignore
+        }
+        setUser(guestUser);
+      },
+      exitGuestMode: async () => {
+        sessionStorage.removeItem(GUEST_STORAGE_KEY);
+        setUser(null);
+        if (firebaseAuth?.currentUser?.isAnonymous) {
+          await firebaseAuthActions.signOut(firebaseAuth).catch(() => {});
+        }
       },
       resetPassword: async (email) => {
         if (!firebaseAuth) {
-          if (!isDemoAllowed) {
-            throw new Error('Firebase authentication is not configured in this environment.');
-          }
-          return;
+          throw new Error('Firebase Authentication is not configured.');
         }
         await firebaseAuthActions.sendPasswordResetEmail(firebaseAuth, email);
       },
       sendVerificationEmail: async () => {
         if (!firebaseAuth?.currentUser) {
-          if (isDemoAllowed && user) {
-            setUser({ ...user, emailVerified: true });
-            return;
-          }
           throw new Error('No active user to send verification email to.');
         }
         await firebaseAuthActions.sendEmailVerification(firebaseAuth.currentUser);
@@ -181,35 +215,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (refreshed) {
             setUser({
               id: refreshed.uid,
+              uid: refreshed.uid,
               email: refreshed.email ?? '',
               displayName: refreshed.displayName ?? undefined,
               photoURL: refreshed.photoURL ?? undefined,
-              emailVerified: refreshed.emailVerified
+              emailVerified: Boolean(refreshed.emailVerified),
+              creationTime: refreshed.metadata?.creationTime,
+              lastSignInTime: refreshed.metadata?.lastSignInTime,
+              phoneNumber: refreshed.phoneNumber ?? undefined
             });
           }
         }
       },
-      signOut: async () => {
-        localStorage.removeItem('pdf_intelligence_demo_user');
-        setUser(null);
-        if (!firebaseAuth) return;
-        await firebaseAuthActions.signOut(firebaseAuth);
-      },
-      enterDemoMode: () => {
-        if (!isDemoAllowed) {
-          throw new Error('Demo mode is disabled in production.');
+      updateUserProfile: async (data: { displayName?: string; photoURL?: string }) => {
+        if (!firebaseAuth?.currentUser) {
+          throw new Error('No authenticated user session found.');
         }
-        const demoUser: User = {
-          id: 'demo-user',
-          email: 'demo@pdfintelligence.local',
-          displayName: 'Demo User',
-          emailVerified: true
-        };
-        localStorage.setItem('pdf_intelligence_demo_user', JSON.stringify(demoUser));
-        setUser(demoUser);
+        await firebaseAuthActions.updateProfile(firebaseAuth.currentUser, data);
+        setUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                displayName: data.displayName !== undefined ? data.displayName : prev.displayName,
+                photoURL: data.photoURL !== undefined ? data.photoURL : prev.photoURL
+              }
+            : null
+        );
+      },
+      signOut: async () => {
+        sessionStorage.removeItem(GUEST_STORAGE_KEY);
+        setUser(null);
+        if (firebaseAuth) {
+          await firebaseAuthActions.signOut(firebaseAuth);
+        }
       }
     }),
-    [user, loading, isDemoAllowed]
+    [user, loading]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

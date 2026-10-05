@@ -30,7 +30,10 @@ export default function Layout() {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Header />
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <main
+          key={location.pathname}
+          className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 animate-fade-in"
+        >
           <div className="mx-auto max-w-7xl">
             <Outlet />
           </div>

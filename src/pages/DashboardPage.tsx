@@ -9,6 +9,7 @@ import {
   Database,
   FileCheck2,
   FileText,
+  HelpCircle,
   LoaderCircle,
   MessageSquare,
   Network,
@@ -17,13 +18,18 @@ import {
   RotateCcw,
   Sparkles,
   Trash2,
-  UploadCloud
+  UploadCloud,
+  UserCheck
 } from 'lucide-react';
 import { api, validatePdfFile } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
 import { MAX_PDF_SIZE_BYTES, MAX_PDF_SIZE_LABEL } from '@/types';
 import type { NoteItem, PdfDocument } from '@/types';
+import PdfIntelligenceCard from '@/components/PdfIntelligenceCard';
+import AiResponseRenderer from '@/components/AiResponseRenderer';
 
 export default function DashboardPage() {
+  const { isGuest } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -73,6 +79,17 @@ export default function DashboardPage() {
   async function handleFileUpload(file?: File | null) {
     if (!file) {
       setUploadError('Please select a PDF file.');
+      return;
+    }
+
+    if (isGuest) {
+      navigate('/login', {
+        state: {
+          message: 'Sign in to upload PDFs and save your documents.',
+          returnTo: '/dashboard',
+          pendingAction: 'upload'
+        }
+      });
       return;
     }
 
@@ -268,6 +285,11 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Featured PDF Intelligence Card */}
+      {documents.length > 0 && (
+        <PdfIntelligenceCard document={documents[0]} className="mb-6" />
+      )}
+
       {/* Upload Drop Zone */}
       <div
         onDrop={handleDrop}
@@ -446,6 +468,14 @@ export default function DashboardPage() {
                       className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 transition hover:bg-slate-50 hover:text-amber-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:text-amber-400"
                     >
                       <Database className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/quiz', { state: { activeDocId: doc.id } })}
+                      title="Practice Quiz"
+                      className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 transition hover:bg-slate-50 hover:text-orange-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:text-orange-400"
+                    >
+                      <HelpCircle className="h-4 w-4" />
                     </button>
                     <button
                       type="button"

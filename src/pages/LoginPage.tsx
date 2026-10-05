@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, Eye, EyeOff, LoaderCircle } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  Sparkles,
+  UserCheck
+} from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthErrorMessage } from '@/services/firebase';
 
 export default function LoginPage() {
-  const { user, loading, isConfigured, isDemoAllowed, signIn, signInWithGoogle, resetPassword, enterDemoMode } = useAuth();
+  const { user, loading, isConfigured, signIn, signInWithGoogle, continueAsGuest, resetPassword } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,20 +24,32 @@ export default function LoginPage() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
+  const [guestBusy, setGuestBusy] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetBusy, setResetBusy] = useState(false);
 
-  // If already authenticated, redirect straight to dashboard without flashing login
+  // Check for redirect message (e.g. Guest attempted upload)
   useEffect(() => {
-    if (!loading && user) {
-      navigate('/dashboard', { replace: true });
+    if (location.state?.message) {
+      setError(location.state.message);
     }
-  }, [user, loading, navigate]);
+  }, [location.state]);
+
+  // If already authenticated and not guest, redirect straight to dashboard
+  useEffect(() => {
+    if (!loading && user && !user.isGuest) {
+      const returnTo = location.state?.returnTo || '/dashboard';
+      navigate(returnTo, { replace: true, state: location.state });
+    }
+  }, [user, loading, navigate, location.state]);
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4 dark:bg-[#0b1020]" role="status">
+      <div
+        className="flex min-h-screen items-center justify-center bg-slate-100 p-4 dark:bg-[#070c18]"
+        role="status"
+      >
         <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
           <LoaderCircle className="h-5 w-5 animate-spin text-blue-600" />
           <span>Verifying authentication session...</span>
@@ -55,7 +76,8 @@ export default function LoginPage() {
 
     try {
       await signIn(email.trim(), password);
-      navigate('/dashboard', { replace: true });
+      const returnTo = location.state?.returnTo || '/dashboard';
+      navigate(returnTo, { replace: true, state: location.state });
     } catch (authError) {
       setError(getAuthErrorMessage(authError));
     } finally {
@@ -70,11 +92,27 @@ export default function LoginPage() {
 
     try {
       await signInWithGoogle();
-      navigate('/dashboard', { replace: true });
+      const returnTo = location.state?.returnTo || '/dashboard';
+      navigate(returnTo, { replace: true, state: location.state });
     } catch (authError) {
       setError(getAuthErrorMessage(authError));
     } finally {
       setGoogleBusy(false);
+    }
+  }
+
+  async function handleContinueAsGuest() {
+    setError('');
+    setMessage('');
+    setGuestBusy(true);
+
+    try {
+      await continueAsGuest();
+      navigate('/dashboard', { replace: true });
+    } catch (err) {
+      setError('Could not initialize guest session. Please try again.');
+    } finally {
+      setGuestBusy(false);
     }
   }
 
@@ -100,62 +138,63 @@ export default function LoginPage() {
     }
   }
 
-  function handleQuickDemo() {
-    try {
-      enterDemoMode();
-      navigate('/dashboard', { replace: true });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Demo mode unavailable.');
-    }
-  }
-
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4 dark:bg-[#0b1020]">
-      <div className="card w-full max-w-md p-6 sm:p-8">
+    <div className="flex min-h-screen items-center justify-center bg-slate-100/90 p-4 transition-colors dark:bg-[#070c18]">
+      {/* Polished, recessed authentication card */}
+      <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-slate-200/90 bg-white p-6 shadow-xl shadow-slate-900/5 ring-1 ring-black/[0.03] transition-all dark:border-slate-800/80 dark:bg-[#0c1324] dark:shadow-2xl dark:shadow-black/40 dark:ring-white/[0.04] sm:p-8">
+        
+        {/* Subtle inner top glow accent */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600" />
+
+        {/* Brand header */}
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-lg font-bold text-white shadow-md">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-lg font-bold text-white shadow-md shadow-blue-500/25">
             PI
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
             Welcome back
           </h1>
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-            Sign in to continue to PDF Intelligence
+          <p className="mt-1.5 flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+            <Sparkles className="h-3.5 w-3.5 text-blue-500" />
+            PDF Intelligence Workspace
           </p>
         </div>
 
-        {!isConfigured && !isDemoAllowed && (
+        {/* Configuration Notice */}
+        {!isConfigured && (
           <div
-            className="mb-5 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+            className="mb-5 flex items-start gap-2.5 rounded-2xl border border-amber-300/80 bg-amber-50/80 p-3.5 text-xs text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200"
             role="status"
           >
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
             <div>
-              <p className="font-semibold">Firebase Authentication Not Configured</p>
-              <p className="mt-1 text-xs">
-                Please set the <code className="font-mono">VITE_FIREBASE_*</code> values in your environment to enable real authentication.
+              <p className="font-semibold">Firebase Authentication Setup</p>
+              <p className="mt-0.5 text-amber-800/90 dark:text-amber-300/90">
+                Set <code className="font-mono">VITE_FIREBASE_*</code> in environment to activate account sync.
               </p>
             </div>
           </div>
         )}
 
+        {/* Error notification */}
         {error && (
           <div
             role="alert"
-            className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200"
+            className="mb-4 flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50/90 p-3.5 text-xs font-medium text-red-800 dark:border-red-900/60 dark:bg-red-950/35 dark:text-red-200"
           >
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-            <span className="flex-1">{error}</span>
+            <span className="flex-1 leading-relaxed">{error}</span>
           </div>
         )}
 
+        {/* Success message */}
         {message && (
           <div
             role="status"
-            className="mb-4 flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-200"
+            className="mb-4 flex items-start gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/90 p-3.5 text-xs font-medium text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/35 dark:text-emerald-200"
           >
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span className="flex-1">{message}</span>
+            <span className="flex-1 leading-relaxed">{message}</span>
           </div>
         )}
 
@@ -163,8 +202,8 @@ export default function LoginPage() {
         <button
           type="button"
           onClick={handleGoogleSignIn}
-          disabled={busy || googleBusy || (!isConfigured && !isDemoAllowed)}
-          className="flex min-h-11 w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          disabled={busy || googleBusy || !isConfigured}
+          className="flex min-h-11 w-full items-center justify-center gap-3 rounded-xl border border-slate-200/90 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50/80 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
         >
           {googleBusy ? (
             <LoaderCircle className="h-4 w-4 animate-spin text-blue-600" />
@@ -191,10 +230,11 @@ export default function LoginPage() {
           <span>{googleBusy ? 'Connecting with Google...' : 'Continue with Google'}</span>
         </button>
 
-        <div className="relative my-5 flex items-center justify-center">
+        {/* Single centered horizontal line: ──────── OR SIGN IN WITH EMAIL ──────── */}
+        <div className="relative my-6 flex items-center justify-center">
           <div className="w-full border-t border-slate-200 dark:border-slate-800" />
-          <span className="bg-white px-3 text-xs uppercase tracking-wider text-slate-400 dark:bg-[#111827]">
-            or sign in with email
+          <span className="absolute bg-white px-3 text-[11px] font-semibold tracking-wider text-slate-400 dark:bg-[#0c1324] whitespace-nowrap">
+            OR SIGN IN WITH EMAIL
           </span>
         </div>
 
@@ -203,7 +243,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="login-email"
-              className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200"
+              className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300"
             >
               Email address
             </label>
@@ -214,8 +254,8 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              disabled={busy || googleBusy}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              disabled={busy || googleBusy || guestBusy}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
               placeholder="name@example.com"
             />
           </div>
@@ -224,7 +264,7 @@ export default function LoginPage() {
             <div className="mb-1 flex items-center justify-between">
               <label
                 htmlFor="login-password"
-                className="text-sm font-medium text-slate-700 dark:text-slate-200"
+                className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300"
               >
                 Password
               </label>
@@ -247,8 +287,8 @@ export default function LoginPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                disabled={busy || googleBusy}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-10 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                disabled={busy || googleBusy || guestBusy}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 pr-10 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 placeholder="••••••••"
               />
               <button
@@ -264,37 +304,48 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            disabled={busy || googleBusy || (!isConfigured && !isDemoAllowed)}
-            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={busy || googleBusy || guestBusy || !isConfigured}
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-600/25 transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy && <LoaderCircle className="h-4 w-4 animate-spin" />}
             <span>{busy ? 'Signing in...' : 'Sign in'}</span>
           </button>
         </form>
 
-        {/* Demo Mode Button (Isolated & Clearly Labeled) */}
-        {!isConfigured && isDemoAllowed && (
-          <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
-            <p className="mb-2 text-center text-xs text-slate-500 dark:text-slate-400">
-              Testing locally without Firebase credentials?
-            </p>
-            <button
-              type="button"
-              onClick={handleQuickDemo}
-              disabled={busy || googleBusy}
-              className="min-h-10 w-full rounded-xl border border-blue-200 bg-blue-50/50 px-4 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100/60 dark:border-blue-900/40 dark:bg-blue-950/20 dark:text-blue-300 dark:hover:bg-blue-900/30"
-            >
-              Continue in Local Demo Mode
-            </button>
-          </div>
-        )}
-
-        <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-4 text-center text-xs text-slate-500 dark:text-slate-400">
           New here?{' '}
-          <Link to="/signup" className="font-medium text-blue-600 hover:underline dark:text-blue-400">
+          <Link to="/signup" className="font-semibold text-blue-600 hover:underline dark:text-blue-400">
             Create an account
           </Link>
         </p>
+
+        {/* Centered separator: ──────── OR ──────── */}
+        <div className="relative my-5 flex items-center justify-center">
+          <div className="w-full border-t border-slate-200 dark:border-slate-800" />
+          <span className="absolute bg-white px-3 text-[10px] font-semibold tracking-wider text-slate-400 dark:bg-[#0c1324] whitespace-nowrap">
+            OR
+          </span>
+        </div>
+
+        {/* Continue as Guest Button */}
+        <div>
+          <button
+            type="button"
+            onClick={handleContinueAsGuest}
+            disabled={busy || googleBusy || guestBusy}
+            className="flex min-h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-slate-200/90 bg-slate-50/80 px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+          >
+            {guestBusy ? (
+              <LoaderCircle className="h-4 w-4 animate-spin text-slate-500" />
+            ) : (
+              <UserCheck className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+            )}
+            <span>Continue as Guest</span>
+          </button>
+          <p className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-500">
+            Explore the workspace • Sign in required to upload & save documents
+          </p>
+        </div>
 
         {/* Forgot Password Modal */}
         {showResetModal && (
@@ -304,8 +355,8 @@ export default function LoginPage() {
             aria-modal="true"
             aria-labelledby="reset-modal-title"
           >
-            <div className="card w-full max-w-sm p-6 shadow-2xl">
-              <h2 id="reset-modal-title" className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+            <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+              <h2 id="reset-modal-title" className="text-base font-bold text-slate-900 dark:text-white">
                 Reset your password
               </h2>
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -319,7 +370,7 @@ export default function LoginPage() {
                   value={resetEmail}
                   onChange={(e) => setResetEmail(e.target.value)}
                   placeholder="name@example.com"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
                 <div className="flex items-center justify-end gap-2 pt-2">
                   <button

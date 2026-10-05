@@ -106,6 +106,16 @@ export default function SettingsPage() {
                 </p>
               </div>
 
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => navigate('/profile')}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  Manage profile & avatar →
+                </button>
+              </div>
+
               {!user?.emailVerified && isConfigured && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200">
                   <p className="font-medium">Verify your email address</p>

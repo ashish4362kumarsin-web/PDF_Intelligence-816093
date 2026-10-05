@@ -1,4 +1,5 @@
 import { firebaseAuth } from './firebase';
+import { firestoreService } from './firestoreService';
 import { MAX_PDF_SIZE_BYTES, MAX_PDF_SIZE_LABEL } from '@/types';
 import type {
   ChatMessage,
@@ -6,7 +7,9 @@ import type {
   DocumentExtractedData,
   MindMapNode,
   NoteItem,
-  PdfDocument
+  PdfDocument,
+  PdfIntelligence,
+  QuizRecord
 } from '@/types';
 
 /**
@@ -65,10 +68,6 @@ export async function authorizationHeaders(): Promise<Record<string, string>> {
     } catch (err) {
       console.warn('Failed to retrieve Firebase ID token:', err);
     }
-  }
-  const demoToken = localStorage.getItem('pdf_intelligence_demo_user');
-  if (demoToken) {
-    return { Authorization: `Bearer ${demoToken}` };
   }
   return {};
 }
@@ -193,6 +192,55 @@ export const api = {
         body: JSON.stringify({ document_id: documentId })
       }
     ),
+  getPdfIntelligence: (documentId: string) =>
+    request<{ data: PdfIntelligence | null }>(`/pdfs/${encodeURIComponent(documentId)}/intelligence`),
+  generatePdfIntelligence: (documentId: string) =>
+    request<{ status: string; data: PdfIntelligence }>(
+      `/pdfs/${encodeURIComponent(documentId)}/intelligence/generate`,
+      {
+        method: 'POST'
+      }
+    ),
+  generateQuiz: (payload: {
+    document_id: string;
+    question_count: number;
+    difficulty: string;
+    topic?: string;
+    question_type?: string;
+  }) =>
+    request<{
+      status: string;
+      quiz: {
+        documentId: string;
+        documentName: string;
+        difficulty: 'Easy' | 'Medium' | 'Hard';
+        questionCount: number;
+        questions: any[];
+      };
+    }>('/quiz/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  saveQuizResult: (payload: QuizRecord) =>
+    request<{ status: string; id: string }>('/quiz/save', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  getQuizHistory: (documentId?: string) =>
+    request<{ data: QuizRecord[] }>(
+      `/quiz/history${documentId ? `?documentId=${encodeURIComponent(documentId)}` : ''}`
+    ),
+  getQuizById: (quizId: string) =>
+    request<{ data: QuizRecord | null }>(`/quiz/${encodeURIComponent(quizId)}`),
+  createConversation: (payload: { document_id: string; title?: string }) =>
+    request<{ status: string; session: ChatSession }>('/chat/conversations', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  deleteConversation: (sessionId: string) =>
+    request<{ status: string }>(`/chat/conversations/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE'
+    }),
   deletePdf: (documentId: string) =>
     request<{ status: string; message: string }>(`/pdfs/${encodeURIComponent(documentId)}`, {
       method: 'DELETE'

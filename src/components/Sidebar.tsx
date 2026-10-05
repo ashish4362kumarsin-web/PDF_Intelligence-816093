@@ -3,12 +3,15 @@ import {
   BookOpen,
   Database,
   FileText,
+  HelpCircle,
   LayoutDashboard,
+  LogIn,
   LogOut,
   MessageSquare,
   Network,
   Settings,
   Sparkles,
+  UserCheck,
   User as UserIcon
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,15 +29,21 @@ export const navItems: NavItem[] = [
   { to: '/notes', label: 'Study Notes', icon: FileText },
   { to: '/mindmap', label: 'Mind Map', icon: Network },
   { to: '/extracted-data', label: 'Extracted Data', icon: Database },
+  { to: '/quiz', label: 'Practice Quiz', icon: HelpCircle },
+  { to: '/profile', label: 'Profile', icon: UserIcon },
   { to: '/settings', label: 'Settings', icon: Settings }
 ];
 
 export default function Sidebar() {
-  const { user, signOut } = useAuth();
+  const { user, isGuest, signOut, exitGuestMode } = useAuth();
   const navigate = useNavigate();
 
   async function handleSignOut() {
-    await signOut();
+    if (isGuest) {
+      await exitGuestMode();
+    } else {
+      await signOut();
+    }
     navigate('/login', { replace: true });
   }
 
@@ -96,29 +105,63 @@ export default function Sidebar() {
 
       {/* User Footer */}
       <div className="border-t border-slate-200 p-4 dark:border-slate-800">
-        <div className="flex items-center justify-between rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-              <UserIcon className="h-4 w-4" />
+        {isGuest ? (
+          <div className="flex items-center justify-between rounded-xl bg-amber-50/80 p-2.5 transition dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-200/80 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
+                <UserCheck className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-bold text-amber-950 dark:text-amber-200">
+                  Guest Session
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate('/login')}
+                  className="truncate text-[10px] font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  Sign in to save →
+                </button>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-slate-800 dark:text-slate-200">
-                {user?.displayName || user?.email?.split('@')[0] || 'User'}
-              </p>
-              <p className="truncate text-[10px] text-slate-500 dark:text-slate-400">
-                {user?.email || 'Authenticated'}
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              title="Exit guest mode"
+              className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleSignOut}
-            title="Sign out"
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between rounded-xl bg-slate-50 p-2.5 transition hover:bg-slate-100/80 dark:bg-slate-800/60 dark:hover:bg-slate-800">
+            <NavLink
+              to="/profile"
+              title="View Profile"
+              className="flex min-w-0 flex-1 items-center gap-2.5"
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                <UserIcon className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  {user?.displayName || user?.email?.split('@')[0] || 'User'}
+                </p>
+                <p className="truncate text-[10px] text-blue-600 dark:text-blue-400">
+                  View profile →
+                </p>
+              </div>
+            </NavLink>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              title="Sign out"
+              className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

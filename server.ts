@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import path from 'path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'url';
 import pdfParse from 'pdf-parse';
 import { GoogleGenAI } from '@google/genai';
@@ -213,27 +214,7 @@ async function verifyAuthToken(req: Request): Promise<AuthenticatedUser | null> 
     // not a valid JWT format
   }
 
-  // 3. Demo Mode (Allowed ONLY in non-production, or if VITE_ALLOW_DEMO_AUTH === 'true')
-  const isProduction = process.env.NODE_ENV === 'production';
-  const allowDemo =
-    process.env.VITE_ALLOW_DEMO_AUTH === 'true' ||
-    process.env.ALLOW_DEMO_AUTH === 'true' ||
-    !isProduction;
-
-  if (allowDemo) {
-    if (token === 'guest-demo-token' || token === 'demo-user-token') {
-      return { uid: 'demo-user', email: 'demo@pdfintelligence.local' };
-    }
-    try {
-      const parsed = JSON.parse(token);
-      if (parsed && (parsed.id || parsed.uid)) {
-        return { uid: parsed.id || parsed.uid, email: parsed.email };
-      }
-    } catch {
-      // not JSON demo token
-    }
-  }
-
+  // Strict token validation - only real Firebase tokens are accepted
   return null;
 }
 
@@ -318,206 +299,86 @@ interface MindMapNode {
   children?: MindMapNode[];
 }
 
-const documents = new Map<string, StoredDoc>();
-const chatSessions = new Map<string, ChatSession>();
-const chatMessages = new Map<string, ChatMessage[]>();
-const notes = new Map<string, NoteItem[]>();
-const extractedDataStore = new Map<
-  string,
+const DATA_DIR = path.join(__dirname, 'data');
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+try {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+} catch (e) {
+  console.warn('Failed to ensure data/uploads directory:', e);
+}
+
+function persistMapToFile<T>(filename: string, map: Map<string, T>) {
+  try {
+    const cleanEntries: [string, any][] = [];
+    for (const [k, v] of map.entries()) {
+      if (v && typeof v === 'object' && 'buffer' in (v as any)) {
+        // Exclude huge binary buffer from JSON
+        const copy = { ...(v as any) };
+        delete copy.buffer;
+        cleanEntries.push([k, copy]);
+      } else {
+        cleanEntries.push([k, v]);
+      }
+    }
+    const obj = Object.fromEntries(cleanEntries);
+    fs.writeFileSync(path.join(DATA_DIR, filename), JSON.stringify(obj, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn(`[Persistence] Failed saving ${filename}:`, err);
+  }
+}
+
+function loadMapFromFile<T>(filename: string): Map<string, T> {
+  const map = new Map<string, T>();
+  try {
+    const fullPath = path.join(DATA_DIR, filename);
+    if (fs.existsSync(fullPath)) {
+      const parsed = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
+      for (const [k, v] of Object.entries(parsed)) {
+        map.set(k, v as T);
+      }
+    }
+  } catch (err) {
+    console.warn(`[Persistence] Failed loading ${filename}:`, err);
+  }
+  return map;
+}
+
+const documents = loadMapFromFile<StoredDoc>('documents.json');
+const chatSessions = loadMapFromFile<ChatSession>('chatSessions.json');
+const chatMessages = loadMapFromFile<ChatMessage[]>('chatMessages.json');
+const notes = loadMapFromFile<NoteItem[]>('notes.json');
+const extractedDataStore = loadMapFromFile<
   { documentId: string; ownerId: string; data: ExtractedDataSet; updatedAt: string }
->();
-const mindMapsStore = new Map<
-  string,
+>('extractedData.json');
+const mindMapsStore = loadMapFromFile<
   { documentId: string; ownerId: string; root: MindMapNode; updatedAt: string }
->();
-const userSettingsStore = new Map<
-  string,
+>('mindMaps.json');
+const userSettingsStore = loadMapFromFile<
   { theme: 'light' | 'dark' | 'system'; notifications_enabled: boolean }
->();
+>('userSettings.json');
+const intelligenceStore = loadMapFromFile<any>('intelligence.json');
+const quizHistoryStore = loadMapFromFile<any>('quizHistory.json');
 
-// Seed sample document for demo evaluation
-const sampleDocId = 'sample-ai-overview';
-const sampleOwnerId = 'demo-user';
-const sampleText = `--- Page 1 ---
-Executive Summary: Artificial Intelligence and Machine Learning Fundamentals
-Artificial Intelligence (AI) and Machine Learning (ML) are transforming software engineering, scientific research, and document analytics.
-Founded on mathematical foundations including linear algebra, probability theory, and multivariable calculus, modern machine learning systems learn patterns directly from high-dimensional datasets.
-
---- Page 2 ---
-1. Supervised Learning
-In supervised learning, models are trained on labelled input-output pairs. Common architectures include linear regression, logistic regression, support vector machines, decision trees, and convolutional neural networks (CNNs). Training involves minimizing empirical loss via stochastic gradient descent (SGD) and variants like Adam optimizer.
-
---- Page 3 ---
-2. Unsupervised and Self-Supervised Learning
-Unsupervised learning discovers latent representations without explicit supervisory signals. Algorithms such as k-means clustering, principal component analysis (PCA), variational autoencoders (VAEs), and contrastive learning extract semantic features directly from unstructured data.
-
---- Page 4 ---
-3. The Transformer Architecture and Attention Mechanisms
-Introduced in the seminal 2017 paper "Attention Is All You Need" by Vaswani et al., the Transformer architecture replaced recurrent mechanisms with scaled dot-product multi-head self-attention.
-Key components:
-- Query, Key, and Value projections
-- Multi-Head Attention: MHA(Q,K,V) = Concat(head_1, ..., head_h)W^O
-- Positional encodings enabling parallel token processing
-- Layer normalization and residual connections
-
---- Page 5 ---
-4. Large Language Models and Document Intelligence
-Modern Large Language Models (LLMs) such as Gemini utilize autoregressive decoders trained on multi-trillion token datasets. Retrieval-Augmented Generation (RAG) grounds generative outputs in verified source excerpts, mitigating hallucinations and maintaining strict factual citations.
-
-5. Ethical AI, Grounding, and Safety
-Deploying intelligent systems requires strict adherence to alignment, provenance verification, differential privacy, and rigorous bias evaluation benchmarks.`;
+function getDocBuffer(doc: StoredDoc): Buffer {
+  if (doc.buffer && doc.buffer.length > 0) return doc.buffer;
+  const localFile = path.join(UPLOADS_DIR, `${doc.id}.pdf`);
+  if (fs.existsSync(localFile)) {
+    try {
+      const buf = fs.readFileSync(localFile);
+      doc.buffer = buf;
+      return buf;
+    } catch {
+      // fallback
+    }
+  }
+  return createBasicPdfBuffer(doc.title, doc.text || '');
+}
 
 function createBasicPdfBuffer(title: string, text: string): Buffer {
   const content = `%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n4 0 obj\n<< /Length 200 >>\nstream\nBT\n/F1 14 Tf\n50 720 Td\n(${title}) Tj\n/F1 10 Tf\n0 -24 Td\n(PDF Intelligence Document Excerpt) Tj\nET\nendstream\nendobj\n5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\nxref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000244 00000 n \n0000000495 00000 n \ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n574\n%%EOF`;
   return Buffer.from(content, 'utf-8');
 }
-
-const samplePdfBuffer = createBasicPdfBuffer(
-  'Introduction to Artificial Intelligence and Machine Learning',
-  sampleText
-);
-
-// Populate sample doc
-documents.set(sampleDocId, {
-  id: sampleDocId,
-  ownerId: sampleOwnerId,
-  title: 'Artificial Intelligence & Machine Learning Overview.pdf',
-  status: 'ready',
-  uploadedAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-  size: samplePdfBuffer.length || 184500,
-  pages: 5,
-  text: sampleText,
-  buffer: samplePdfBuffer,
-  summary:
-    'Core foundations of Artificial Intelligence, Supervised Learning, Transformers, and Document Intelligence.'
-});
-
-notes.set(sampleOwnerId, [
-  {
-    id: 'sample-note-1',
-    ownerId: sampleOwnerId,
-    documentId: sampleDocId,
-    title: 'Notes: Artificial Intelligence & Machine Learning Overview.pdf',
-    body: `# Study Notes: AI & Machine Learning Foundations
-
-## 1. Mathematical Foundations
-- Key subjects: Linear algebra, multivariable calculus, probability theory.
-- Purpose: Forms the mathematical bedrock of gradient optimization and neural representations.
-
-## 2. Supervised vs. Unsupervised Learning
-- **Supervised**: Learns mapping from inputs to labelled outputs (CNNs, Linear/Logistic regression, Trees).
-- **Unsupervised**: Discovers hidden structures and latent representations (PCA, k-means, autoencoders).
-
-## 3. Transformer Architecture (2017)
-- Replaced recurrent networks with **Multi-Head Self-Attention**.
-- Key formula: Scaled Dot-Product Attention $$\\text{Attention}(Q,K,V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V$$.
-- Enables massive parallelization during training.
-
-## 4. Document Intelligence & RAG
-- **Retrieval-Augmented Generation (RAG)** supplies grounding text to generative models.
-- Prevents hallucination by ensuring answers cite verified source document excerpts.`,
-    updatedAt: new Date(Date.now() - 3600000 * 2).toISOString()
-  }
-]);
-
-extractedDataStore.set(sampleDocId, {
-  documentId: sampleDocId,
-  ownerId: sampleOwnerId,
-  data: {
-    headings: [
-      'Executive Summary: Artificial Intelligence and Machine Learning Fundamentals',
-      '1. Supervised Learning',
-      '2. Unsupervised and Self-Supervised Learning',
-      '3. The Transformer Architecture and Attention Mechanisms',
-      '4. Large Language Models and Document Intelligence',
-      '5. Ethical AI, Grounding, and Safety'
-    ],
-    names: ['Vaswani et al.', 'Adam Optimizer', 'Gemini'],
-    dates: ['2017'],
-    numbers: ['2017', '1', '2', '3', '4', '5'],
-    key_facts: [
-      'Transformer architecture was introduced in the 2017 paper "Attention Is All You Need"',
-      'Multi-head self-attention enables parallel token processing without recurrence',
-      'RAG grounds generative models with verified source excerpts to mitigate hallucinations'
-    ],
-    terms: [
-      'Artificial Intelligence',
-      'Supervised Learning',
-      'Self-Attention',
-      'Transformer',
-      'Retrieval-Augmented Generation',
-      'Variational Autoencoders'
-    ]
-  },
-  updatedAt: new Date(Date.now() - 3600000 * 2).toISOString()
-});
-
-mindMapsStore.set(sampleDocId, {
-  documentId: sampleDocId,
-  ownerId: sampleOwnerId,
-  root: {
-    id: 'root-1',
-    label: 'AI & Machine Learning',
-    children: [
-      {
-        id: 'child-1',
-        label: 'Supervised Learning',
-        children: [
-          { id: 'sub-1', label: 'Regression & Classification' },
-          { id: 'sub-2', label: 'Gradient Descent (Adam, SGD)' },
-          { id: 'sub-3', label: 'Neural Networks (CNN)' }
-        ]
-      },
-      {
-        id: 'child-2',
-        label: 'Unsupervised Learning',
-        children: [
-          { id: 'sub-4', label: 'Clustering (k-means)' },
-          { id: 'sub-5', label: 'Dimensionality Reduction (PCA)' },
-          { id: 'sub-6', label: 'Generative Models (VAEs)' }
-        ]
-      },
-      {
-        id: 'child-3',
-        label: 'Transformers & LLMs',
-        children: [
-          { id: 'sub-7', label: 'Multi-Head Attention' },
-          { id: 'sub-8', label: 'Positional Encoding' },
-          { id: 'sub-9', label: 'RAG & Document Intelligence' }
-        ]
-      }
-    ]
-  },
-  updatedAt: new Date(Date.now() - 3600000 * 2).toISOString()
-});
-
-chatSessions.set('sample-session-1', {
-  id: 'sample-session-1',
-  ownerId: sampleOwnerId,
-  documentId: sampleDocId,
-  title: 'What is the Transformer architecture?',
-  updatedAt: new Date(Date.now() - 3600000 * 3).toISOString()
-});
-
-chatMessages.set('sample-session-1', [
-  {
-    id: 'msg-1',
-    sessionId: 'sample-session-1',
-    ownerId: sampleOwnerId,
-    role: 'user',
-    content: 'What is the Transformer architecture and when was it introduced?',
-    createdAt: new Date(Date.now() - 3600000 * 3).toISOString()
-  },
-  {
-    id: 'msg-2',
-    sessionId: 'sample-session-1',
-    ownerId: sampleOwnerId,
-    role: 'assistant',
-    content:
-      'According to the document (Page 4), the Transformer architecture was introduced in the seminal 2017 paper *"Attention Is All You Need"* by Vaswani et al.\n\nIt replaced recurrent mechanisms with **scaled dot-product multi-head self-attention**, enabling parallel token processing across sequences.',
-    createdAt: new Date(Date.now() - 3600000 * 3 + 15000).toISOString()
-  }
-]);
 
 // -------------------------------------------------------------
 // Background PDF Processing & OCR Pipeline
@@ -600,12 +461,14 @@ async function processDocumentAsync(docId: string, fileBuffer: Buffer, originalF
       const current = documents.get(docId);
       if (current && current.status !== 'failed') {
         current.status = 'ready';
+        persistMapToFile('documents.json', documents);
       }
     }, 600);
   } catch (pipelineErr) {
     console.error(`Pipeline failure for ${docId}:`, pipelineErr);
     doc.status = 'failed';
     doc.error = pipelineErr instanceof Error ? pipelineErr.message : 'Processing failed';
+    persistMapToFile('documents.json', documents);
   }
 }
 
@@ -1328,7 +1191,330 @@ apiRouter.put('/settings', requireAuth, (req, res) => {
       : {})
   };
   userSettingsStore.set(userId, updated);
+  persistMapToFile('userSettings.json', userSettingsStore);
   res.json({ status: 'success', data: updated });
+});
+
+// -------------------------------------------------------------
+// PDF Intelligence Endpoints (Protected)
+// -------------------------------------------------------------
+apiRouter.get('/pdfs/:documentId/intelligence', requireAuth, (req, res) => {
+  const userId = (req as AuthenticatedRequest).user.uid;
+  const { documentId } = req.params;
+  const doc = documents.get(documentId);
+
+  if (!doc || doc.ownerId !== userId) {
+    return res.status(404).json({ detail: 'Document not found' });
+  }
+
+  const intel = intelligenceStore.get(documentId);
+  res.json({ data: intel || null });
+});
+
+apiRouter.post('/pdfs/:documentId/intelligence/generate', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as AuthenticatedRequest).user.uid;
+    const { documentId } = req.params;
+    const doc = documents.get(documentId);
+
+    if (!doc || doc.ownerId !== userId) {
+      return res.status(404).json({ detail: 'Document not found' });
+    }
+
+    if (doc.status !== 'ready' && doc.text.length === 0) {
+      return res.status(400).json({ detail: 'Document is still being processed. Please wait a moment.' });
+    }
+
+    let intel: any = null;
+
+    if (ai) {
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: `Analyze the document inside <source_document> and generate comprehensive educational intelligence.
+Return ONLY valid JSON matching this schema:
+{
+  "overview": string (2-3 paragraphs high-level synthesis),
+  "mainTopics": string[] (3-6 core topics),
+  "keyConcepts": string[] (4-8 key concept badges),
+  "importantKeywords": string[] (6-12 searchable keywords),
+  "importantDefinitions": [{"term": string, "definition": string}],
+  "documentStructure": [{"section": string, "description": string}],
+  "difficulty": "Beginner" | "Intermediate" | "Advanced" | "Comprehensive",
+  "majorSections": string[],
+  "importantFacts": string[] (4-8 key takeaways),
+  "studyRecommendations": string[] (practical recommendations),
+  "examConcepts": string[] (exam-relevant areas),
+  "suggestedQuestions": string[] (3-5 conceptual inquiry questions),
+  "suggestedNextActions": ["Generate Study Notes", "Ask AI", "Create Mind Map", "Practice Quiz"],
+  "relatedConcepts": string[]
+}
+Do not wrap in markdown or backticks.
+
+<source_document>
+${doc.text.slice(0, 40000)}
+</source_document>`
+                }
+              ]
+            }
+          ]
+        });
+
+        let raw = (response.text || '').trim();
+        if (raw.startsWith('```')) {
+          raw = raw.replace(/^```json?\s*/, '').replace(/\s*```$/, '');
+        }
+        intel = JSON.parse(raw);
+      } catch (geminiErr) {
+        console.warn('Gemini intelligence generation error:', (geminiErr as Error).message);
+      }
+    }
+
+    if (!intel) {
+      // Heuristic fallback
+      const lines = doc.text.split('\n').map((l) => l.trim()).filter(Boolean);
+      const headings = lines.filter((l) => l.length < 60 && /^[A-Z0-9#]/.test(l)).slice(0, 5);
+      const facts = lines.filter((l) => l.length > 50 && l.length < 200).slice(0, 5);
+      const terms = Array.from(new Set(doc.text.match(/\b[A-Z][a-z]{3,}(?: [A-Z][a-z]{3,})?\b/g) || [])).slice(0, 6);
+
+      intel = {
+        overview: doc.summary || `Comprehensive analysis of "${doc.title}". Contains structured information across ${doc.pages || 1} pages.`,
+        mainTopics: headings.length ? headings : ['Document Core Content', 'Key Findings'],
+        keyConcepts: terms.length ? terms : ['Core Concepts', 'Analysis'],
+        importantKeywords: terms.length ? terms : ['PDF', 'Document'],
+        importantDefinitions: [
+          { term: doc.title.replace(/\.pdf$/i, ''), definition: 'The primary subject matter of this analyzed document.' }
+        ],
+        documentStructure: headings.map((h) => ({ section: h, description: 'Content section' })),
+        difficulty: doc.pages > 10 ? 'Advanced' : doc.pages > 4 ? 'Intermediate' : 'Beginner',
+        majorSections: headings,
+        importantFacts: facts.length ? facts : ['Document uploaded and indexed.'],
+        studyRecommendations: [
+          'Review the executive overview',
+          'Explore concept nodes in the interactive Mind Map',
+          'Practice generated quiz questions to test retention'
+        ],
+        examConcepts: terms.slice(0, 4),
+        suggestedQuestions: [
+          `What are the central conclusions in ${doc.title}?`,
+          'How do the main sections relate to one another?'
+        ],
+        suggestedNextActions: ['Generate Study Notes', 'Ask AI', 'Create Mind Map', 'Practice Quiz'],
+        relatedConcepts: terms
+      };
+    }
+
+    intel.documentId = doc.id;
+    intel.pageCount = doc.pages || 1;
+    intel.updatedAt = new Date().toISOString();
+
+    intelligenceStore.set(doc.id, intel);
+    persistMapToFile('intelligence.json', intelligenceStore);
+
+    res.json({ status: 'success', data: intel });
+  } catch (err) {
+    console.error('Intelligence generate error:', err);
+    res.status(500).json({ detail: 'Failed to generate intelligence' });
+  }
+});
+
+// -------------------------------------------------------------
+// Quiz Endpoints (Protected)
+// -------------------------------------------------------------
+apiRouter.post('/quiz/generate', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as AuthenticatedRequest).user.uid;
+    const {
+      document_id,
+      question_count = 5,
+      difficulty = 'Medium',
+      topic,
+      question_type = 'mcq'
+    } = req.body;
+
+    const doc = documents.get(document_id);
+    if (!doc || doc.ownerId !== userId) {
+      return res.status(404).json({ detail: 'Document not found' });
+    }
+
+    let questions: any[] = [];
+
+    if (ai) {
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: `Generate a ${question_count}-question practice quiz based ONLY on the source text in <source_document>.
+Difficulty: ${difficulty}
+${topic ? `Focus specifically on: ${topic}` : ''}
+Question Type: ${question_type}
+
+Return ONLY valid JSON matching this schema:
+[
+  {
+    "id": "q1",
+    "type": "${question_type}",
+    "question": string,
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correctAnswer": "Option A" (must match one of options exactly),
+    "explanation": string (rich, clear educational explanation citing why it is correct and why other choices are wrong)
+  }
+]
+Do not wrap in markdown or backticks.
+
+<source_document>
+${doc.text.slice(0, 35000)}
+</source_document>`
+                }
+              ]
+            }
+          ]
+        });
+
+        let raw = (response.text || '').trim();
+        if (raw.startsWith('```')) {
+          raw = raw.replace(/^```json?\s*/, '').replace(/\s*```$/, '');
+        }
+        questions = JSON.parse(raw);
+      } catch (geminiErr) {
+        console.warn('Gemini quiz generation error:', (geminiErr as Error).message);
+      }
+    }
+
+    if (!Array.isArray(questions) || questions.length === 0) {
+      // Heuristic fallback questions
+      questions = [
+        {
+          id: 'q1',
+          type: 'mcq',
+          question: `What is the primary topic addressed in "${doc.title}"?`,
+          options: [
+            doc.title.replace(/\.pdf$/i, ''),
+            'Unrelated generic topic',
+            'Historical fiction',
+            'Technical manual'
+          ],
+          correctAnswer: doc.title.replace(/\.pdf$/i, ''),
+          explanation: `The document "${doc.title}" focuses directly on this subject as evidenced by its primary title and page content.`
+        },
+        {
+          id: 'q2',
+          type: 'mcq',
+          question: `According to the document text, how many pages were analyzed?`,
+          options: [
+            `${doc.pages || 1} ${doc.pages === 1 ? 'page' : 'pages'}`,
+            '100 pages',
+            '500 pages',
+            'Unknown'
+          ],
+          correctAnswer: `${doc.pages || 1} ${doc.pages === 1 ? 'page' : 'pages'}`,
+          explanation: `The uploaded document comprises exactly ${doc.pages || 1} pages.`
+        }
+      ];
+    }
+
+    res.json({
+      status: 'success',
+      quiz: {
+        documentId: doc.id,
+        documentName: doc.title,
+        difficulty,
+        questionCount: questions.length,
+        questions
+      }
+    });
+  } catch (err) {
+    console.error('Quiz generate error:', err);
+    res.status(500).json({ detail: 'Failed to generate quiz' });
+  }
+});
+
+apiRouter.post('/quiz/save', requireAuth, (req, res) => {
+  const userId = (req as AuthenticatedRequest).user.uid;
+  const record = req.body;
+  if (!record || !record.id) {
+    return res.status(400).json({ detail: 'Quiz record required' });
+  }
+
+  record.ownerId = userId;
+  record.savedAt = new Date().toISOString();
+  quizHistoryStore.set(record.id, record);
+  persistMapToFile('quizHistory.json', quizHistoryStore);
+
+  res.json({ status: 'success', id: record.id });
+});
+
+apiRouter.get('/quiz/history', requireAuth, (req, res) => {
+  const userId = (req as AuthenticatedRequest).user.uid;
+  const documentId = req.query.documentId as string | undefined;
+
+  let records = Array.from(quizHistoryStore.values()).filter((r: any) => r.ownerId === userId);
+  if (documentId) {
+    records = records.filter((r: any) => r.documentId === documentId);
+  }
+  records.sort((a: any, b: any) => Date.parse(b.createdAt || '') - Date.parse(a.createdAt || ''));
+
+  res.json({ data: records });
+});
+
+apiRouter.get('/quiz/:quizId', requireAuth, (req, res) => {
+  const userId = (req as AuthenticatedRequest).user.uid;
+  const { quizId } = req.params;
+  const record = quizHistoryStore.get(quizId);
+
+  if (!record || record.ownerId !== userId) {
+    return res.status(404).json({ detail: 'Quiz not found' });
+  }
+
+  res.json({ data: record });
+});
+
+// -------------------------------------------------------------
+// Chat Conversations Management (Protected)
+// -------------------------------------------------------------
+apiRouter.post('/chat/conversations', requireAuth, (req, res) => {
+  const userId = (req as AuthenticatedRequest).user.uid;
+  const { document_id, title } = req.body;
+
+  const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const session = {
+    id: sessionId,
+    ownerId: userId,
+    documentId: document_id,
+    title: title || 'New Conversation',
+    updatedAt: new Date().toISOString()
+  };
+
+  chatSessions.set(sessionId, session);
+  persistMapToFile('chatSessions.json', chatSessions);
+
+  res.json({ status: 'success', session });
+});
+
+apiRouter.delete('/chat/conversations/:sessionId', requireAuth, (req, res) => {
+  const userId = (req as AuthenticatedRequest).user.uid;
+  const { sessionId } = req.params;
+  const session = chatSessions.get(sessionId);
+
+  if (!session || session.ownerId !== userId) {
+    return res.status(404).json({ detail: 'Conversation not found' });
+  }
+
+  chatSessions.delete(sessionId);
+  chatMessages.delete(sessionId);
+  persistMapToFile('chatSessions.json', chatSessions);
+  persistMapToFile('chatMessages.json', chatMessages);
+
+  res.json({ status: 'success' });
 });
 
 // Mount API routes at /api

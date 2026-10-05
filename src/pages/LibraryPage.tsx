@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
-import { AlertCircle, FileText, Search, Trash2, UploadCloud, X } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { AlertCircle, FileText, HelpCircle, MessageSquare, Network, Search, Sparkles, Trash2, UploadCloud, X } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
 import type { PdfDocument } from '@/types';
 
-const maxUploadSizeBytes = 20 * 1024 * 1024;
+const maxUploadSizeBytes = 80 * 1024 * 1024;
 
 export default function LibraryPage() {
+  const { isGuest } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
   const fileInput = useRef<HTMLInputElement>(null);
   const [documents, setDocuments] = useState<PdfDocument[]>([]);
@@ -96,6 +99,18 @@ export default function LibraryPage() {
 
   async function uploadFile(file?: File) {
     if (!file) return;
+
+    if (isGuest) {
+      navigate('/login', {
+        state: {
+          message: 'Sign in to upload PDFs and save your documents.',
+          returnTo: '/library',
+          pendingAction: 'upload'
+        }
+      });
+      return;
+    }
+
     setError('');
     if (!file.name.toLowerCase().endsWith('.pdf') || (file.type && file.type !== 'application/pdf')) {
       setError('Choose a PDF file to upload.');

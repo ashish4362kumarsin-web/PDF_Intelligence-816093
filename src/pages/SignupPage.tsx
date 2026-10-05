@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getAuthErrorMessage } from '@/services/firebase';
 
 export default function SignupPage() {
-  const { user, loading, isConfigured, isDemoAllowed, signUp, signInWithGoogle, enterDemoMode } = useAuth();
+  const { user, loading, isConfigured, signUp, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const nameId = useId();
   const emailId = useId();
@@ -95,15 +95,6 @@ export default function SignupPage() {
     }
   }
 
-  function handleQuickDemo() {
-    try {
-      enterDemoMode();
-      navigate('/dashboard', { replace: true });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Demo mode unavailable.');
-    }
-  }
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4 dark:bg-[#0b1020]">
       <div className="card w-full max-w-md p-6 sm:p-8">
@@ -119,7 +110,7 @@ export default function SignupPage() {
           </p>
         </div>
 
-        {!isConfigured && !isDemoAllowed && (
+        {!isConfigured && (
           <div
             className="mb-5 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
             role="status"
@@ -148,7 +139,7 @@ export default function SignupPage() {
         <button
           type="button"
           onClick={handleGoogleSignIn}
-          disabled={busy || googleBusy || (!isConfigured && !isDemoAllowed)}
+          disabled={busy || googleBusy || !isConfigured}
           className="flex min-h-11 w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
         >
           {googleBusy ? (
@@ -305,30 +296,13 @@ export default function SignupPage() {
 
           <button
             type="submit"
-            disabled={busy || googleBusy || (!isConfigured && !isDemoAllowed)}
+            disabled={busy || googleBusy || !isConfigured}
             className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy && <LoaderCircle className="h-4 w-4 animate-spin" />}
             <span>{busy ? 'Creating account...' : 'Create account'}</span>
           </button>
         </form>
-
-        {/* Demo Mode Button (Isolated & Clearly Labeled) */}
-        {!isConfigured && isDemoAllowed && (
-          <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
-            <p className="mb-2 text-center text-xs text-slate-500 dark:text-slate-400">
-              Testing locally without Firebase credentials?
-            </p>
-            <button
-              type="button"
-              onClick={handleQuickDemo}
-              disabled={busy || googleBusy}
-              className="min-h-10 w-full rounded-xl border border-blue-200 bg-blue-50/50 px-4 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100/60 dark:border-blue-900/40 dark:bg-blue-950/20 dark:text-blue-300 dark:hover:bg-blue-900/30"
-            >
-              Continue in Local Demo Mode
-            </button>
-          </div>
-        )}
 
         <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
           Already have an account?{' '}

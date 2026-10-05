@@ -1,0 +1,114 @@
+{
+  "entities": {
+    "users": {
+      "path": "users/{userId}",
+      "description": "User profile and settings documents",
+      "fields": {
+        "uid": { "type": "string", "description": "Authenticated user ID" },
+        "email": { "type": "string", "description": "User email address" },
+        "displayName": { "type": "string", "description": "Display name" },
+        "createdAt": { "type": "string", "description": "Account creation timestamp" },
+        "lastSignInAt": { "type": "string", "description": "Last sign in timestamp" }
+      }
+    },
+    "documents": {
+      "path": "users/{userId}/documents/{docId}",
+      "description": "Uploaded PDF documents metadata and extracted text",
+      "fields": {
+        "id": { "type": "string", "description": "Document ID" },
+        "ownerId": { "type": "string", "description": "Owner user UID" },
+        "title": { "type": "string", "description": "File name" },
+        "status": { "type": "string", "description": "Processing status" },
+        "uploadedAt": { "type": "string", "description": "Upload timestamp" },
+        "size": { "type": "number", "description": "File size in bytes" },
+        "pages": { "type": "number", "description": "Page count" },
+        "storagePath": { "type": "string", "description": "Firebase Cloud Storage path" },
+        "summary": { "type": "string", "description": "Executive summary" }
+      }
+    },
+    "conversations": {
+      "path": "users/{userId}/conversations/{conversationId}",
+      "description": "AI Chat conversations associated with documents",
+      "fields": {
+        "id": { "type": "string", "description": "Conversation ID" },
+        "ownerId": { "type": "string", "description": "Owner user UID" },
+        "documentId": { "type": "string", "description": "Associated PDF document ID" },
+        "title": { "type": "string", "description": "Conversation title" },
+        "updatedAt": { "type": "string", "description": "Last activity timestamp" }
+      }
+    },
+    "messages": {
+      "path": "users/{userId}/conversations/{conversationId}/messages/{messageId}",
+      "description": "Individual chat messages within a conversation",
+      "fields": {
+        "id": { "type": "string", "description": "Message ID" },
+        "sessionId": { "type": "string", "description": "Conversation ID" },
+        "ownerId": { "type": "string", "description": "Owner user UID" },
+        "role": { "type": "string", "description": "user or assistant" },
+        "content": { "type": "string", "description": "Message markdown text" },
+        "createdAt": { "type": "string", "description": "Timestamp" }
+      }
+    },
+    "studyNotes": {
+      "path": "users/{userId}/studyNotes/{noteId}",
+      "description": "AI-generated structured study notes",
+      "fields": {
+        "id": { "type": "string", "description": "Note ID" },
+        "ownerId": { "type": "string", "description": "Owner user UID" },
+        "documentId": { "type": "string", "description": "Associated document ID" },
+        "title": { "type": "string", "description": "Note title" },
+        "body": { "type": "string", "description": "Markdown body content" },
+        "updatedAt": { "type": "string", "description": "Timestamp" }
+      }
+    },
+    "mindMaps": {
+      "path": "users/{userId}/mindMaps/{docId}",
+      "description": "Visual hierarchical mind maps generated from PDFs",
+      "fields": {
+        "documentId": { "type": "string", "description": "Document ID" },
+        "ownerId": { "type": "string", "description": "Owner user UID" },
+        "root": { "type": "object", "description": "Mind map node tree hierarchy" },
+        "updatedAt": { "type": "string", "description": "Timestamp" }
+      }
+    },
+    "extractedData": {
+      "path": "users/{userId}/extractedData/{docId}",
+      "description": "Structured extracted terms, dates, numbers, facts, headings",
+      "fields": {
+        "documentId": { "type": "string", "description": "Document ID" },
+        "ownerId": { "type": "string", "description": "Owner user UID" },
+        "data": { "type": "object", "description": "Extracted key data sets" },
+        "updatedAt": { "type": "string", "description": "Timestamp" }
+      }
+    },
+    "intelligence": {
+      "path": "users/{userId}/intelligence/{docId}",
+      "description": "Deep PDF Intelligence summary, topics, difficulty, exam concepts",
+      "fields": {
+        "documentId": { "type": "string", "description": "Document ID" },
+        "ownerId": { "type": "string", "description": "Owner user UID" },
+        "overview": { "type": "string", "description": "Executive overview" },
+        "mainTopics": { "type": "array", "description": "List of topics" },
+        "difficulty": { "type": "string", "description": "Complexity estimate" },
+        "updatedAt": { "type": "string", "description": "Timestamp" }
+      }
+    },
+    "quizHistory": {
+      "path": "users/{userId}/quizHistory/{quizId}",
+      "description": "Completed practice quizzes and results",
+      "fields": {
+        "id": { "type": "string", "description": "Quiz ID" },
+        "ownerId": { "type": "string", "description": "Owner user UID" },
+        "documentId": { "type": "string", "description": "Source document ID" },
+        "documentName": { "type": "string", "description": "Source PDF title" },
+        "difficulty": { "type": "string", "description": "Quiz difficulty" },
+        "questionCount": { "type": "number", "description": "Total question count" },
+        "score": { "type": "number", "description": "Earned score" },
+        "percentage": { "type": "number", "description": "Score percentage" },
+        "questions": { "type": "array", "description": "Quiz questions with explanations" },
+        "userAnswers": { "type": "object", "description": "User selected answers" },
+        "createdAt": { "type": "string", "description": "Timestamp" }
+      }
+    }
+  }
+}

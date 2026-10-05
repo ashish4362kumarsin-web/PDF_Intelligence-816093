@@ -6,9 +6,11 @@ function isPlaceholder(value?: string | null): boolean {
   const trimmed = value.trim().replace(/^["']|["']$/g, '');
   if (trimmed.length === 0) return true;
   return (
-    /^YOUR_/i.test(trimmed) ||
-    /^YOUR-/i.test(trimmed) ||
+    /YOUR_/i.test(trimmed) ||
+    /YOUR-/i.test(trimmed) ||
     /YOUR_PROJECT/i.test(trimmed) ||
+    /YOUR_PRIVATE_KEY/i.test(trimmed) ||
+    /CHANGE_ME/i.test(trimmed) ||
     trimmed === 'G-XXXXXXXXXX'
   );
 }
@@ -59,10 +61,12 @@ function parseEnvFile(filePath: string): Record<string, string> {
 }
 
 export function loadAndNormalizeEnv(rootDir: string = process.cwd()): Record<string, string> {
+  const exampleEnvPath = path.resolve(rootDir, '.env.example');
   const localEnvPath = path.resolve(rootDir, '.env.local');
   const standardEnvPath = path.resolve(rootDir, '.env');
 
   const fileVars = {
+    ...parseEnvFile(exampleEnvPath),
     ...parseEnvFile(standardEnvPath),
     ...parseEnvFile(localEnvPath)
   };

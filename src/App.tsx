@@ -11,6 +11,8 @@ import NotesPage from '@/pages/NotesPage';
 import MindMapPage from '@/pages/MindMapPage';
 import ExtractedDataPage from '@/pages/ExtractedDataPage';
 import SettingsPage from '@/pages/SettingsPage';
+import ProfilePage from '@/pages/ProfilePage';
+import QuizPage from '@/pages/QuizPage';
 
 export default function App() {
   return (
@@ -31,6 +33,8 @@ export default function App() {
               <Route path="notes" element={<NotesPage />} />
               <Route path="mindmap" element={<MindMapPage />} />
               <Route path="extracted-data" element={<ExtractedDataPage />} />
+              <Route path="quiz" element={<QuizPage />} />
+              <Route path="profile" element={<ProfilePage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>
 
